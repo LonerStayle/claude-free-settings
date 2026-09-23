@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.tfstate*)",
+      "Read(./**/*.tfvars)",
+      "Read(./secrets/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.kube/**)",
+      "Bash(git push:*)",
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(kubectl apply:*)",
+      "Bash(kubectl delete:*)",
+      "Bash(helm upgrade:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(vercel deploy:*)",
+      "Bash(supabase db push:*)",
+      "Bash(docker push:*)",
+      "Bash(env)",
+      "Bash(printenv:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|NotebookEdit|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__FREE_MODEL_HOME__/hooks/sensitive-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+services:
+  litellm:
+    # v1.101.0 을 digest 로 고정한다 (2026-09-21 조회). latest, main-stable 은 쓰지 않는다.
+    # 서명 검증: brew install cosign 후 LiteLLM 문서의 cosign verify 절차를 따른다.
+    image: ghcr.io/berriai/litellm@sha256:d295634e09c648dcdb72c4cc2dd226f5fb87823a73e88cbbed6f205e4deb044b
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"        # 로컬에서만 접근
+    env_file: .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./litellm/custom_callbacks.py:/app/custom_callbacks.py:ro
+    command: ["--config", "/app/config.yaml"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Ollama 로컬(비공개 그룹) 접근용

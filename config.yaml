@@ -1,0 +1,119 @@
+# LiteLLM 프록시 설정. 설계: DESIGN.md 4.3절
+# 무료 모델은 업스트림 503·429 가 잦다. 그룹마다 4개 이상 넣어 하나가 죽어도 그룹이 비지 않게 한다.
+# 도구 호출 확인 완료 (2026-09-22): DESIGN.md 6절 표 참고.
+# 키를 발급받은 제공처만 주석을 해제한다.
+
+model_list:
+  # ── main: 메인 루프. 컨텍스트 큰 모델 우선 ──
+  - model_name: claude-free-main
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free   # 1M
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 6
+  - model_name: claude-free-main
+    litellm_params:
+      model: openrouter/nex-agi/nex-n2.5-pro:free                # 262K
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 6
+  - model_name: claude-free-main
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3.5-lightning:free       # 1M
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 4
+  - model_name: claude-free-main
+    litellm_params:
+      model: openrouter/inclusionai/ling-3.0-flash-vl:free       # 262K
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 4
+  # - model_name: claude-free-main
+  #   litellm_params:
+  #     model: nvidia_nim/moonshotai/kimi-k3
+  #     api_key: os.environ/NVIDIA_NIM_API_KEY
+  #     rpm: 30
+  # - model_name: claude-free-main
+  #   litellm_params:
+  #     model: openai/nvidia/nemotron-3-ultra-550b-a55b
+  #     api_base: https://router.requesty.ai/v1     # 적용 전 URL 확인
+  #     api_key: os.environ/REQUESTY_API_KEY
+  #     rpm: 10
+
+  # ── sub: 서브에이전트 ──
+  - model_name: claude-free-sub
+    litellm_params:
+      model: openrouter/cohere/north-mini-code:free              # 256K
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 5
+  - model_name: claude-free-sub
+    litellm_params:
+      model: openrouter/poolside/laguna-xs-2.1:free              # 262K
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 5
+  - model_name: claude-free-sub
+    litellm_params:
+      model: openrouter/nex-agi/nex-n2.5-mini:free               # 262K
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 5
+  - model_name: claude-free-sub
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free   # 256K
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 4
+  # - model_name: claude-free-sub
+  #   litellm_params:
+  #     model: gemini/<Flash-Lite 모델 ID>
+  #     api_key: os.environ/GEMINI_API_KEY
+  #     rpm: 10
+  # - model_name: claude-free-sub
+  #   litellm_params:
+  #     model: mistral/codestral-2508
+  #     api_key: os.environ/MISTRAL_API_KEY
+  #     rpm: 30
+
+  # ── fast: 백그라운드 소형 요청 ──
+  - model_name: claude-free-fast
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3.5-lightning:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 4
+  - model_name: claude-free-fast
+    litellm_params:
+      model: openrouter/nex-agi/nex-n2.5-mini:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 4
+  - model_name: claude-free-fast
+    litellm_params:
+      model: openrouter/poolside/laguna-xs-2.1:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 3
+  # - model_name: claude-free-fast
+  #   litellm_params:
+  #     model: groq/openai/gpt-oss-120b
+  #     api_key: os.environ/GROQ_API_KEY
+  #     rpm: 25
+  #     tpm: 7000
+
+litellm_settings:
+  drop_params: true                  # 제공처가 모르는 파라미터 제거
+  modify_params: true                # 제공처 형식에 맞게 요청 보정
+  turn_off_message_logging: true     # 요청 본문을 로그에 남기지 않는다
+  # 1.5단계: 요청 내용 검사. SENSITIVE.md 5.5절. 동작 확인 후 주석 해제
+  # callbacks: custom_callbacks.proxy_handler_instance
+
+router_settings:
+  routing_strategy: simple-shuffle   # Redis 없이 동작. rpm 을 가중치로 씀
+  num_retries: 3
+  allowed_fails: 3                   # 1 이면 일시적 503 한 번에 배포가 죽는다
+  cooldown_time: 60                  # 업스트림 과부하는 대개 1분 안에 회복된다
+  enable_pre_call_checks: true       # context_window_fallbacks 에 필요
+  # enforce_model_rate_limits 는 쓰지 않는다. rpm 초과 시 배포를 걸러내
+  # 그룹이 비면 "No deployments available" 429 가 그대로 올라온다.
+  fallbacks:
+    - claude-free-main: ["claude-free-sub", "claude-free-fast"]
+    - claude-free-sub: ["claude-free-main", "claude-free-fast"]
+    - claude-free-fast: ["claude-free-sub", "claude-free-main"]
+  context_window_fallbacks:
+    - claude-free-sub: ["claude-free-main"]
+    - claude-free-fast: ["claude-free-main"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

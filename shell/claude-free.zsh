@@ -31,6 +31,8 @@ claude-free() {
   sed "s|__FREE_MODEL_HOME__|$home|g" \
     "$home/claude/free-session.settings.template.json" > "$settings" || return 1
 
+  # CLAUDE_CODE_SUBAGENT_MODEL_FORCE 가 없으면 내장 에이전트의 model: inherit 이
+  # 환경변수보다 우선해서 서브에이전트도 claude-free-main 으로 간다.
   ANTHROPIC_BASE_URL="http://127.0.0.1:4000" \
   ANTHROPIC_AUTH_TOKEN="$key" \
   ANTHROPIC_API_KEY="" \
@@ -40,6 +42,7 @@ claude-free() {
   ANTHROPIC_DEFAULT_FABLE_MODEL="claude-free-main" \
   ANTHROPIC_DEFAULT_HAIKU_MODEL="claude-free-fast" \
   CLAUDE_CODE_SUBAGENT_MODEL="claude-free-sub" \
+  CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 \
   CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 \
   claude \
     --settings "$settings" \

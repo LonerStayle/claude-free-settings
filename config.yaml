@@ -96,8 +96,8 @@ litellm_settings:
   drop_params: true                  # 제공처가 모르는 파라미터 제거
   modify_params: true                # 제공처 형식에 맞게 요청 보정
   turn_off_message_logging: true     # 요청 본문을 로그에 남기지 않는다
-  # 1.5단계: 요청 내용 검사. SENSITIVE.md 5.5절. 동작 확인 후 주석 해제
-  # callbacks: custom_callbacks.proxy_handler_instance
+  # 요청 내용 검사. SENSITIVE.md 5.5절. 2026-09-23 동작 확인
+  callbacks: custom_callbacks.proxy_handler_instance
 
 router_settings:
   routing_strategy: simple-shuffle   # Redis 없이 동작. rpm 을 가중치로 씀

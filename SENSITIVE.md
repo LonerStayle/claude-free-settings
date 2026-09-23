@@ -267,12 +267,24 @@ litellm_settings:
 
 Docker 실행 시 `-v "$PWD/custom_callbacks.py:/app/custom_callbacks.py:ro"`를 추가한다.
 
+### 검증 결과 (2026-09-23)
+
+| 항목 | 결과 |
+|---|---|
+| `/v1/messages`에서 `async_pre_call_hook` 호출 | 동작. `call_type=anthropic_messages` |
+| 비밀값 패턴 차단 | 동작. 가짜 AWS 키, private key 모두 400 |
+| B등급 경로 차단 | 동작. 단 오탐이 커서 기본 꺼짐으로 바꿈 (아래) |
+| 일반 요청 통과 | 동작. `src/app.ts`, `infrastructure/` 모두 통과 |
+
+**B등급 경로 검사를 기본 꺼짐으로 바꾼 이유**: 이 검사는 경로 "언급"만으로 막는다. Claude Code는 시스템 프롬프트에 프로젝트 파일 목록을 넣으므로, `infra/` 폴더가 있는 프로젝트는 첫 요청부터 전부 막힌다. 1차 hook이 이미 B등급 파일 읽기와 `cat` 우회를 막으므로, 2차에서는 비밀값 패턴만 본다. 켜려면 `docker-compose.yml`의 `GUARD_BLOCK_B_PATHS`를 `1`로 둔다.
+
+초기 정규식은 `(^|/)infra/` 라 문장 중간의 `look at infra/main.tf`를 놓쳤다. `\binfra/`로 고쳤다.
+
 미확인 항목:
 
-- `/v1/messages` 경로에서 `async_pre_call_hook`이 호출되는지, 여기서 바꾼 `data["model"]`이 라우팅에 반영되는지.
-- hook에서 요청 헤더를 읽는 정확한 위치.
-- 비밀값 패턴은 오탐이 있다. JWT 패턴은 테스트 코드의 예시 토큰에도 걸린다. 운영하면서 조정한다.
-- `pinned_sessions`는 메모리에만 있다. LiteLLM을 재시작하면 사라진다. 재시작 뒤에도 대화에 경로 흔적이 남아 있으면 다시 고정된다.
+- hook에서 요청 헤더(`x-claude-code-session-id`)를 읽는 정확한 위치. B등급 검사를 켤 때만 필요하다.
+- 비밀값 패턴은 오탐이 있다. 테스트 코드의 예시 토큰에도 걸린다. 운영하면서 조정한다.
+- `pinned_sessions`는 메모리에만 있다. LiteLLM을 재시작하면 사라진다.
 
 비밀값이 걸려 요청이 거절되면 그 세션은 계속 거절된다. 비밀값이 대화에 남아 있기 때문이다. 새 세션으로 시작하고, 노출된 키는 교체한다.
 

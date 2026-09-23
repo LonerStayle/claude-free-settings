@@ -63,14 +63,16 @@ flowchart TD
     B -- "해당 없음" --> R["도구 실행<br/>결과가 대화에 남음"]
 
     R --> P["다음 요청을 LiteLLM 으로 전송"]
-    P --> D{"2차: 요청 본문 검사<br/>custom_callbacks.py (선택)"}
+    P --> D{"2차: 요청 본문 검사<br/>custom_callbacks.py"}
 
     D -- "비밀값 패턴<br/>AKIA, sk-, PRIVATE KEY" --> Y1["요청 거절 400"]
-    D -- "B등급 경로 흔적" --> Y2["거절 또는 비공개 그룹 고정"]
+    D -- "B등급 경로 흔적<br/>(기본 꺼짐)" --> Y2["거절 또는 비공개 그룹 고정"]
     D -- "해당 없음" --> OK["무료 그룹으로 전송"]
 ```
 
 2차가 필요한 이유: 1차는 도구 호출의 경로만 본다. `cat` 출력, MCP 응답, 이어받은 이전 대화는 1차를 지나간다.
+
+B등급 경로 검사는 기본으로 꺼져 있다. 경로 "언급"만으로 막기 때문에, `infra/` 폴더가 있는 프로젝트는 Claude Code가 시스템 프롬프트에 넣는 파일 목록 탓에 모든 요청이 막힌다. 켜려면 `docker-compose.yml`의 `GUARD_BLOCK_B_PATHS`를 `1`로 둔다.
 
 | 등급 | 규칙 | 대상 |
 |---|---|---|
@@ -134,7 +136,7 @@ LiteLLM은 `restart: unless-stopped`라 컴퓨터를 재시작해도 자동으�
 | `shell/claude-free.zsh` | `claude-free` 함수 |
 | `claude/free-session.settings.template.json` | 무료 세션 차단 규칙과 hook 연결 |
 | `hooks/sensitive-guard.sh` | 경로 판별 |
-| `litellm/custom_callbacks.py` | 요청 본문 검사 (기본 꺼짐) |
+| `litellm/custom_callbacks.py` | 요청 본문 검사. 비밀값 패턴 차단 (켜짐), B등급 경로 차단 (꺼짐) |
 | `DESIGN.md` | 전체 설계, 검증 기록 |
 | `SENSITIVE.md` | 민감 정보 보호 설계 |
 | `OVERVIEW.md` | 도표 요약 |
@@ -194,9 +196,12 @@ OpenRouter 한도 등급은 **누적 구매액** 기준이라 한 번 충전하�
 | 무료 모델 도구 호출 | 확인 (8개) |
 | 모델 장애 시 다른 모델로 전환 | 확인 |
 | `.env` 차단 (읽기 + `cat` 우회) | 확인 |
-| 대화 세션에서 서브에이전트 라우팅 | 미확인 |
-| `--continue` 세션 이어가기 | 미확인 |
-| 요청 본문 검사 (`custom_callbacks.py`) | 미확인, 기본 꺼짐 |
+| 구독 세션 → 무료 세션 `--continue` | 확인. 이전 대화 내용이 이어짐 |
+| `haiku` alias → `claude-free-fast` | 확인. 배경 요청이 fast 그룹으로 감 |
+| 요청 본문 검사 (`custom_callbacks.py`) | 확인. 비밀값 패턴 400 차단 |
+| 서브에이전트 → `claude-free-sub` | 확인. 단 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` 이 필요하다 (아래) |
+
+`CLAUDE_CODE_SUBAGENT_MODEL` 만 두면 서브에이전트가 `claude-free-main` 으로 간다. 내장 에이전트 정의의 `model: inherit` 이 환경변수보다 우선하기 때문이다. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` 을 같이 주면 sub 그룹으로 간다. `claude-free` 함수에 이미 들어 있다.
 
 ---
 

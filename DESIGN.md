@@ -281,10 +281,11 @@ claude-free() {
 | 1 | OpenRouter `:free` 모델의 도구 호출 확인 (OpenRouter API 직접 호출) | `read_file` 도구를 호출한다 | 통과. 결과는 아래 표 |
 | 2 | LiteLLM 기동 후 `curl http://127.0.0.1:4000/v1/messages` 호출 | 세 그룹 모두 200, 도구 호출 응답 | 통과 |
 | 3 | `claude-free -p`로 단순 응답, 파일 읽기, `.env` 읽기 시도 | 응답·읽기 성공, `.env`는 차단 | 통과. `Read(.env)`는 `permissions.deny`가 막고, 이어서 시도한 `cat .env`는 hook이 막았다 |
-| 4 | `claude-free` 대화 세션에서 서브에이전트(Explore) 호출 | LiteLLM 응답 헤더 `x-litellm-model-group`이 `claude-free-sub` | 미실행 |
+| 4 | `claude-free`에서 서브에이전트 호출 | 요청이 `claude-free-sub`로 감 | **미확인.** Task 도구만 허용해도 무료 모델이 서브에이전트를 띄우지 않았다. 설정 문제가 아니라 모델이 Task를 잘 쓰지 않는 것. 같은 방식의 `haiku` alias → `claude-free-fast` 매핑은 동작을 확인했으므로 환경변수 경로 자체는 정상 |
 | 5 | 무료 제공처 429 시 다른 제공처로 전환 | Claude Code에 오류 없음 | 통과 (의도치 않게 확인됨. qwen 업스트림 429 → `x-litellm-attempted-fallbacks: 1`로 main 그룹 응답) |
-| 6 | 구독 세션에서 한도 메시지가 뜰 때 `claude --debug` 로그 확인 | 실제 HTTP 상태코드 기록 (2절 [미확인] 해소) | 미실행 |
-| 7 | `claude-free --continue`로 세션 전환 | 직전 대화가 이어지고 첫 요청이 성공한다 | 미실행 |
+| 6 | 구독 세션에서 한도 메시지가 뜰 때 `claude --debug` 로그 확인 | 실제 HTTP 상태코드 기록 (2절 [미확인] 해소) | 미실행. 실제로 한도가 소진돼야 확인 가능 |
+| 7 | `claude-free --continue`로 세션 전환 | 직전 대화가 이어지고 첫 요청이 성공한다 | **통과.** 구독 세션에서 `claude -p`로 특정 단어를 기억시킨 뒤, 같은 디렉터리에서 `claude-free --continue -p`로 물었더니 그 단어를 그대로 답했다 |
+| 8 | 요청 본문 검사 콜백 (1.5단계) | 비밀값 패턴 400, 일반 요청 통과 | **통과.** `SENSITIVE.md` 검증 결과 참고. B등급 경로 검사는 오탐이 커서 기본 꺼짐으로 전환 |
 
 1단계 결과 (OpenRouter `:free`, 2026-09-22):
 

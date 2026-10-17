@@ -8,7 +8,7 @@ claude          # 평소: 구독으로 Anthropic 직결
 claude-free     # 한도 소진 후: 무료 모델로 같은 대화를 이어감
 ```
 
-- 무료 모델 8개를 세 그룹으로 묶어 돌려 쓴다. 하나가 죽어도 작업이 끊기지 않는다.
+- 무료 제공처 5곳의 모델 17개 배포를 세 그룹으로 묶어 돌려 쓴다. 하나가 죽어도 작업이 끊기지 않는다.
 - `.env`, `infra/`, `deploy/` 같은 경로는 읽기 전에 막는다.
 - 무료 세션에서는 `git push`, `terraform apply` 같은 배포 명령을 막는다.
 
@@ -26,13 +26,13 @@ flowchart TD
     Q -- "아니오" --> C2["claude-free --continue<br/>(무료 세션)"]
     C2 --> L["LiteLLM 프록시<br/>127.0.0.1:4000 / Docker"]
 
-    L --> M["claude-free-main<br/>메인 루프 · 모델 4"]
-    L --> S["claude-free-sub<br/>서브에이전트 · 모델 4"]
-    L --> F["claude-free-fast<br/>소형 요청 · 모델 3"]
+    L --> M["claude-free-main<br/>메인 루프 · 배포 5"]
+    L --> S["claude-free-sub<br/>서브에이전트 · 배포 7"]
+    L --> F["claude-free-fast<br/>소형 요청 · 배포 5"]
 
-    M --> P["OpenRouter :free<br/>(Gemini · Groq · Requesty 는 키 넣으면 추가)"]
-    S --> P
-    F --> P
+    M --> M1["OpenRouter :free 4<br/>Requesty 1"]
+    S --> S1["OpenRouter :free 4<br/>Gemini · Mistral · Requesty"]
+    F --> F1["OpenRouter :free 3<br/>Groq · Gemini"]
 
     M -. "그룹 전체 실패 시" .-> S
     S -. "그룹 전체 실패 시" .-> M
@@ -65,12 +65,14 @@ flowchart TD
     R --> P["다음 요청을 LiteLLM 으로 전송"]
     P --> D{"2차: 요청 본문 검사<br/>custom_callbacks.py"}
 
-    D -- "비밀값 패턴<br/>AKIA, sk-, PRIVATE KEY" --> Y1["요청 거절 400"]
+    D -- "비밀값 패턴<br/>sk-, gsk_, AKIA, PRIVATE KEY 등<br/>또는 .env 의 키 값" --> Y1["요청 거절 400"]
     D -- "B등급 경로 흔적<br/>(기본 꺼짐)" --> Y2["거절 또는 비공개 그룹 고정"]
     D -- "해당 없음" --> OK["무료 그룹으로 전송"]
 ```
 
 2차가 필요한 이유: 1차는 도구 호출의 경로만 본다. `cat` 출력, MCP 응답, 이어받은 이전 대화는 1차를 지나간다.
+
+2차는 두 가지를 본다. 접두어가 정해진 키(OpenAI·Anthropic `sk-`, Groq `gsk_`, GitHub `ghp_`·`github_pat_`, GitLab, Google `AIza`, AWS `AKIA`·`ASIA`, Stripe `sk_live_`, Slack, Hugging Face, npm, 개인 키 헤더)와, 이 저장소 `.env`에 든 키 값 자체다. 뒤쪽 덕분에 Mistral처럼 접두어가 없는 키도 잡힌다. JWT는 Supabase anon 키 같은 공개용 값과 구분할 수 없어 넣지 않았다.
 
 B등급 경로 검사는 기본으로 꺼져 있다. 경로 "언급"만으로 막기 때문에, `infra/` 폴더가 있는 프로젝트는 Claude Code가 시스템 프롬프트에 넣는 파일 목록 탓에 모든 요청이 막힌다. 켜려면 `docker-compose.yml`의 `GUARD_BLOCK_B_PATHS`를 `1`로 둔다.
 
@@ -136,7 +138,8 @@ LiteLLM은 `restart: unless-stopped`라 컴퓨터를 재시작해도 자동으�
 | `shell/claude-free.zsh` | `claude-free` 함수 |
 | `claude/free-session.settings.template.json` | 무료 세션 차단 규칙과 hook 연결 |
 | `hooks/sensitive-guard.sh` | 경로 판별 |
-| `litellm/custom_callbacks.py` | 요청 본문 검사. 비밀값 패턴 차단 (켜짐), B등급 경로 차단 (꺼짐) |
+| `litellm/custom_callbacks.py` | 요청 본문 검사. 비밀값 패턴·`.env` 키 값 차단 (켜짐), B등급 경로 차단 (꺼짐) |
+| `scripts/check-models.sh` | 등록 모델이 아직 무료·도구 호출 가능한지 점검 |
 | `DESIGN.md` | 전체 설계, 검증 기록 |
 | `SENSITIVE.md` | 민감 정보 보호 설계 |
 | `OVERVIEW.md` | 도표 요약 |
@@ -150,29 +153,41 @@ LiteLLM은 `restart: unless-stopped`라 컴퓨터를 재시작해도 자동으�
 
 | 제공처 | 무료 한도 | 상태 |
 |---|---|---|
-| OpenRouter | 20 RPM / 1,000 RPD ($10 1회 충전 시. 미충전 50 RPD) | 사용 중 |
-| Gemini | Flash-Lite 약 500 RPD | 키 넣으면 사용 가능 |
-| Groq | 30 RPM / 1K RPD / 8K TPM | 소형 요청 전용 |
-| Requesty | 200 RPD | 키 넣으면 사용 가능 |
-| Mistral | 월 4M~10M 토큰 | 전화 인증 필요 |
+| OpenRouter | 20 RPM / 1,000 RPD ($10 1회 충전 시. 미충전 50 RPD) | 사용 중 (main·sub·fast) |
+| Requesty | 200 RPD. 가격 0 NVIDIA 모델만 등록 | 사용 중 (main·sub). 입력 학습 활용 |
+| Gemini | Flash-Lite 약 500 RPD | 사용 중 (sub·fast). 입력 학습 활용 |
+| Mistral | 1 RPS, 월 4M~10M 토큰. 전화 인증 필요 | 사용 중 (sub). 학습 활용 기본값, 콘솔에서 끌 수 있음 |
+| Groq | 30 RPM / 1K RPD / 8K TPM | 사용 중 (fast 전용, 입력 6K 토큰 이하만) |
 | NVIDIA NIM | 40 RPM | 보류. 2026-09 신규 계정 수동 인증 대기 |
 
 OpenRouter 한도 등급은 **누적 구매액** 기준이라 한 번 충전하면 잔액이 줄어도 유지된다. `:free` 모델만 쓰면 잔액이 줄지 않는다. 잔액이 음수면 `:free`도 402로 거절되니 `:free` 모델만 등록한다.
 
-### 도구 호출이 확인된 무료 모델 (OpenRouter, 2026-09-22)
+### 등록된 모델 (2026-09-26)
 
-| 모델 | 컨텍스트 | 그룹 |
-|---|---|---|
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | 1M | main |
-| `nvidia/nemotron-3.5-lightning:free` | 1M | main, fast |
-| `nex-agi/nex-n2.5-pro:free` | 262K | main |
-| `inclusionai/ling-3.0-flash-vl:free` | 262K | main |
-| `cohere/north-mini-code:free` | 256K | sub |
-| `poolside/laguna-xs-2.1:free` | 262K | sub, fast |
-| `nex-agi/nex-n2.5-mini:free` | 262K | sub, fast |
-| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | 256K | sub |
+| 제공처 | 모델 | 컨텍스트 | 그룹 |
+|---|---|---|---|
+| OpenRouter | `nvidia/nemotron-3-ultra-550b-a55b:free` | 1M | main |
+| OpenRouter | `nvidia/nemotron-3-super-120b-a12b:free` | 262K | main |
+| OpenRouter | `nvidia/nemotron-3.5-lightning:free` | 1M | main, fast |
+| OpenRouter | `qwen/qwen3.8-27b:free` | 262K | main, fast |
+| OpenRouter | `cohere/north-mini-code:free` | 256K | sub |
+| OpenRouter | `poolside/laguna-xs-2.1:free` | 262K | sub, fast |
+| OpenRouter | `google/gemma-4-31b-it:free` | 262K | sub |
+| OpenRouter | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | 256K | sub |
+| Requesty | `nvidia/nemotron-3-ultra-550b-a55b` | 1M | main |
+| Requesty | `nvidia/nemotron-3-super-120b-a12b` | 1M | sub |
+| Gemini | `gemini-3.5-flash-lite` | - | sub, fast |
+| Mistral | `codestral-2508` | 256K | sub |
+| Groq | `openai/gpt-oss-120b` | 131K (입력 6K 제한) | fast |
 
-무료 모델 목록은 자주 바뀐다. `curl -s https://openrouter.ai/api/v1/models | jq -r '.data[] | select(.id | endswith(":free")) | select(.supported_parameters | index("tools")) | "\(.context_length)\t\(.id)"' | sort -rn` 으로 현재 후보를 뽑을 수 있다.
+2026-09-22에 넣은 `nex-n2.5-pro`, `nex-n2.5-mini`, `ling-3.0-flash-vl`은 나흘 만에 무료 목록에서 빠져 교체했다. 무료 모델 목록은 자주 바뀌니 가끔 점검한다.
+
+```bash
+scripts/check-models.sh               # 등록 모델이 아직 무료·도구 호출 가능한지. 문제 있으면 종료 코드 1
+scripts/check-models.sh --candidates  # 등록되지 않은 OpenRouter 무료 도구 호출 모델도 출력
+```
+
+`config.yaml`을 고친 뒤에는 `docker compose restart`로 반영한다.
 
 ---
 
@@ -183,7 +198,7 @@ OpenRouter 한도 등급은 **누적 구매액** 기준이라 한 번 충전하�
 - **서버 도구 없음**: WebSearch 등 Anthropic 서버 도구는 동작하지 않는다.
 - **prompt caching 없음**: 요청마다 전체 토큰을 쓴다.
 - **도구 호출 품질**: 무료 모델은 도구 호출을 누락하는 경우가 있다.
-- **데이터 학습**: Gemini 무료분, Mistral 기본값은 입력을 학습에 쓴다. 민감한 작업에는 해당 제공처를 빼거나 구독 세션을 쓴다.
+- **데이터 학습**: Gemini 무료분, Mistral 기본값, Requesty의 NVIDIA 무료 모델은 입력을 학습에 쓴다. 민감한 작업에는 `config.yaml`에서 해당 항목을 주석 처리하거나 구독 세션을 쓴다.
 - **차단 범위**: 목록에 있는 패턴만 잡는다. 이름이 평범한 민감 파일은 지나간다.
 
 ---
@@ -200,6 +215,8 @@ OpenRouter 한도 등급은 **누적 구매액** 기준이라 한 번 충전하�
 | `haiku` alias → `claude-free-fast` | 확인. 배경 요청이 fast 그룹으로 감 |
 | 요청 본문 검사 (`custom_callbacks.py`) | 확인. 비밀값 패턴 400 차단 |
 | 서브에이전트 → `claude-free-sub` | 확인. 단 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` 이 필요하다 (아래) |
+| Gemini·Groq·Mistral·Requesty 추가 후 세 그룹 도구 호출 | 확인 (2026-09-26, `/v1/messages`) |
+| Groq 형식 키, `.env` 키 값 차단 | 확인 (2026-09-26). 400 거절 |
 
 `CLAUDE_CODE_SUBAGENT_MODEL` 만 두면 서브에이전트가 `claude-free-main` 으로 간다. 내장 에이전트 정의의 `model: inherit` 이 환경변수보다 우선하기 때문이다. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` 을 같이 주면 sub 그룹으로 간다. `claude-free` 함수에 이미 들어 있다.
 

@@ -1,19 +1,36 @@
 # LiteLLM 요청 내용 검사 (1.5단계). 설계: SENSITIVE.md 5.5절
-# config.yaml 의 litellm_settings.callbacks 주석을 해제해야 동작한다.
-# 미확인: /v1/messages 경로에서 이 hook 이 호출되는지, data["model"] 변경이 라우팅에 반영되는지.
+# config.yaml 의 litellm_settings.callbacks 로 연결되어 있다. /v1/messages 경로 동작 확인 (2026-09-23).
+# 미확인: data["model"] 변경이 라우팅에 반영되는지 (PRIVATE_GROUP 을 쓸 때만 해당).
 import os
 import re
 
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 
+# 접두어가 고정된 키만 잡는다. 접두어 없는 키(AWS secret, 일반 JWT 등)는 잡지 못한다.
+# JWT 는 Supabase anon 키처럼 공개용도 같은 형식이라 오탐 때문에 넣지 않았다.
 SECRET = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
-    r"|AKIA[0-9A-Z]{16}"
-    r"|sk-[A-Za-z0-9_-]{20,}"
-    r"|ghp_[A-Za-z0-9]{36}"
-    r"|AIza[0-9A-Za-z_-]{35}"
+    r"|(?:AKIA|ASIA)[0-9A-Z]{16}"                      # AWS access key
+    r"|sk-[A-Za-z0-9_-]{20,}"                          # OpenAI, Anthropic, OpenRouter, LiteLLM
+    r"|gh[pousr]_[A-Za-z0-9]{36}"                      # GitHub
+    r"|github_pat_[A-Za-z0-9_]{50,}"
+    r"|glpat-[A-Za-z0-9_-]{20,}"                       # GitLab
+    r"|AIza[0-9A-Za-z_-]{35}"                          # Google
+    r"|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}"       # Stripe
+    r"|xox[abposr]-[A-Za-z0-9-]{10,}"                  # Slack token
+    r"|hooks\.slack\.com/services/[A-Za-z0-9/]{20,}"   # Slack webhook
+    r"|gsk_[A-Za-z0-9]{40,}"                           # Groq
+    r"|hf_[A-Za-z0-9]{30,}"                            # Hugging Face
+    r"|npm_[A-Za-z0-9]{36}"                            # npm
 )
+# 이 프록시가 쓰는 키 값 자체. 접두어 없는 키(Mistral 등)도 값이 그대로 보이면 잡는다.
+# docker-compose 의 env_file: .env 로 들어온 값이다.
+OWN_KEYS = [
+    v for k, v in os.environ.items()
+    if (k.endswith("_API_KEY") or k == "LITELLM_MASTER_KEY") and len(v) >= 16
+]
+
 B_PATH = re.compile(
     # \b 로 시작해야 문장 중간의 "look at infra/main.tf" 도 잡힌다.
     r"\b(infra|terraform|pulumi|ansible|k8s|helm|charts|deploy|secrets)/"
@@ -39,7 +56,7 @@ class SensitiveRouter(CustomLogger):
 
         body = str(data.get("messages", "")) + str(data.get("system", ""))
 
-        if SECRET.search(body):
+        if SECRET.search(body) or any(k in body for k in OWN_KEYS):
             raise HTTPException(
                 status_code=400,
                 detail="비밀값 패턴이 요청에 포함되어 전송을 거절했습니다. 새 세션으로 시작하고 노출된 키를 교체하세요.",

@@ -1,6 +1,6 @@
 # 최종 설계안 도표
 
-작성일: 2026-09-21
+작성일: 2026-09-21, 갱신: 2026-09-26
 상세 내용: `DESIGN.md`(전체 설계), `SENSITIVE.md`(민감 정보 보호)
 보는 방법: VS Code에서 이 파일을 열고 `Cmd+Shift+V`(미리보기). Mermaid가 그림으로 안 나오면 확장 "Markdown Preview Mermaid Support"를 설치한다. GitHub에서는 그대로 그림으로 나온다.
 
@@ -23,15 +23,16 @@ flowchart TD
     L --> F["claude-free-fast<br/>제목·요약 등 소형 요청"]
 
     M --> M1["OpenRouter :free<br/>$10 충전, 1,000건/일"]
-    M --> M2["NVIDIA NIM"]
     M --> M3["Requesty 200건/일"]
 
     S --> S1["Gemini Flash-Lite"]
     S --> S2["Mistral"]
     S --> S3["OpenRouter :free"]
+    S --> S4["Requesty"]
 
     F --> F1["Groq"]
     F --> F2["Gemini Flash-Lite"]
+    F --> F3["OpenRouter :free"]
 
     M -. "그룹 전체 실패 시" .-> S
     S -. "그룹 전체 실패 시" .-> M
@@ -39,15 +40,17 @@ flowchart TD
 ```
 
 - 평소에는 `claude`로 구독에 직결한다. 한도가 소진되면 `claude-free --continue`로 같은 대화를 이어간다. 전환은 수동이다.
-- 같은 그룹 안에서 제공처가 429를 반환하면, LiteLLM이 그 제공처를 5분간 빼고 같은 그룹의 다른 제공처로 재시도한다.
+- 같은 그룹 안에서 제공처가 429나 503을 반환하면, LiteLLM이 그 배포를 60초간 빼고 같은 그룹의 다른 배포로 재시도한다.
 - 점선은 그룹 전체가 실패했을 때 넘어가는 다른 그룹이다.
 - 서브에이전트는 `CLAUDE_CODE_SUBAGENT_MODEL=claude-free-sub`로 연결한다.
 
 | 그룹 | 용도 | 제공처 |
 |---|---|---|
-| `claude-free-main` | 메인 루프 | OpenRouter `:free`, NVIDIA NIM, Requesty |
-| `claude-free-sub` | 서브에이전트 | Gemini Flash-Lite, Mistral, OpenRouter `:free` |
-| `claude-free-fast` | 제목 생성·요약 등 소형 요청 | Groq, Gemini Flash-Lite |
+| `claude-free-main` | 메인 루프 | OpenRouter `:free`, Requesty |
+| `claude-free-sub` | 서브에이전트 | OpenRouter `:free`, Gemini Flash-Lite, Mistral, Requesty |
+| `claude-free-fast` | 제목 생성·요약 등 소형 요청 | OpenRouter `:free`, Groq, Gemini Flash-Lite |
+
+NVIDIA NIM은 계정 인증 대기로 보류 중이다. 모델 목록은 `README.md`의 "등록된 모델" 표를 본다.
 
 ---
 
@@ -67,8 +70,8 @@ flowchart TD
     R --> P["다음 요청을 LiteLLM으로 전송"]
     P --> D{"2차: 요청 본문 검사<br/>custom_callbacks.py"}
 
-    D -- "비밀값 패턴 발견<br/>AKIA, sk-, PRIVATE KEY" --> Y1["요청 거절 400<br/>새 세션 시작, 키 교체"]
-    D -- "B등급 경로 흔적 발견" --> Y2{"비공개 그룹<br/>구성했는가?"}
+    D -- "비밀값 패턴 또는 .env 키 값 발견<br/>sk-, gsk_, AKIA, PRIVATE KEY 등" --> Y1["요청 거절 400<br/>새 세션 시작, 키 교체"]
+    D -- "B등급 경로 흔적 발견<br/>(기본 꺼짐)" --> Y2{"비공개 그룹<br/>구성했는가?"}
     D -- "해당 없음" --> OK["일반 무료 그룹으로 전송"]
 
     Y2 -- "아니오 (기본값)" --> Y3["요청 거절"]
@@ -77,6 +80,7 @@ flowchart TD
 
 - 1차는 Claude Code CLI 프로그램의 로컬 기능이다. 내 컴퓨터에서만 실행되고 Claude 토큰이 없어도 동작한다.
 - 2차는 1차를 거치지 않고 들어온 내용(`cat` 출력, MCP 응답, 이어받은 이전 대화)을 잡는다.
+- B등급 경로 검사는 기본으로 꺼져 있다. Claude Code가 시스템 프롬프트에 파일 목록을 넣어서, `infra/` 폴더가 있는 프로젝트는 모든 요청이 막히기 때문이다. `docker-compose.yml`의 `GUARD_BLOCK_B_PATHS`를 `1`로 두면 켜진다.
 
 | 등급 | 규칙 | 대상 |
 |---|---|---|
@@ -97,7 +101,7 @@ flowchart LR
 | 단계 | 진행 조건 | 상태 |
 |---|---|---|
 | 1 | OpenRouter 직결로 무료 모델의 도구 호출 호환성 확인 후 LiteLLM 구성 | 완료 (2026-09-22) |
-| 1.5 | custom callback이 `/v1/messages` 경로에서 동작하는지 확인 | 미착수 |
+| 1.5 | custom callback이 `/v1/messages` 경로에서 동작하는지 확인 | 완료 (2026-09-23). 비밀값 차단만 켬 |
 | 3 | Jev 무료 할당량이나 비용, 한국어 정확도 확인 | 보류 |
 
 자동 전환(구독 한도 초과 시 프록시가 무료 모델로 넘기는 구성)은 하지 않는다. 전환은 `claude-free --continue` 명령으로 한다.

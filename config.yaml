@@ -1,7 +1,10 @@
 # LiteLLM 프록시 설정. 설계: DESIGN.md 4.3절
 # 무료 모델은 업스트림 503·429 가 잦다. 그룹마다 4개 이상 넣어 하나가 죽어도 그룹이 비지 않게 한다.
-# 도구 호출 확인 완료 (2026-09-22): DESIGN.md 6절 표 참고.
-# 키를 발급받은 제공처만 주석을 해제한다.
+# 도구 호출 확인 완료: OpenRouter 2026-09-22 (DESIGN.md 6절), Gemini·Groq·Mistral·Requesty 2026-09-26.
+# 2026-09-26 무료 목록에서 빠진 nex-n2.5-pro, nex-n2.5-mini, ling-3.0-flash-vl 을 교체했다.
+# 교체 모델은 OpenRouter 업스트림 429 로 직접 실측하지 못했다. 같은 모델을 다른 제공처에서 확인했다
+# (qwen3.8-27b: Groq, nemotron-3-super: Requesty). gemma-4-31b-it 는 도구 호출 플래그만 확인.
+# 키를 발급받은 제공처만 주석을 해제한다. 모델이 아직 살아 있는지는 scripts/check-models.sh 로 본다.
 
 model_list:
   # ── main: 메인 루프. 컨텍스트 큰 모델 우선 ──
@@ -12,7 +15,7 @@ model_list:
       rpm: 6
   - model_name: claude-free-main
     litellm_params:
-      model: openrouter/nex-agi/nex-n2.5-pro:free                # 262K
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free   # 262K
       api_key: os.environ/OPENROUTER_API_KEY
       rpm: 6
   - model_name: claude-free-main
@@ -22,7 +25,7 @@ model_list:
       rpm: 4
   - model_name: claude-free-main
     litellm_params:
-      model: openrouter/inclusionai/ling-3.0-flash-vl:free       # 262K
+      model: openrouter/qwen/qwen3.8-27b:free                    # 262K
       api_key: os.environ/OPENROUTER_API_KEY
       rpm: 4
   # - model_name: claude-free-main
@@ -30,12 +33,13 @@ model_list:
   #     model: nvidia_nim/moonshotai/kimi-k3
   #     api_key: os.environ/NVIDIA_NIM_API_KEY
   #     rpm: 30
-  # - model_name: claude-free-main
-  #   litellm_params:
-  #     model: openai/nvidia/nemotron-3-ultra-550b-a55b
-  #     api_base: https://router.requesty.ai/v1     # 적용 전 URL 확인
-  #     api_key: os.environ/REQUESTY_API_KEY
-  #     rpm: 10
+  # Requesty: 200 RPD 를 그룹 전체가 나눠 쓴다. 가격 0 모델만 등록한다.
+  - model_name: claude-free-main
+    litellm_params:
+      model: openai/nvidia/nemotron-3-ultra-550b-a55b         # 1M
+      api_base: https://router.requesty.ai/v1
+      api_key: os.environ/REQUESTY_API_KEY
+      rpm: 4
 
   # ── sub: 서브에이전트 ──
   - model_name: claude-free-sub
@@ -50,7 +54,7 @@ model_list:
       rpm: 5
   - model_name: claude-free-sub
     litellm_params:
-      model: openrouter/nex-agi/nex-n2.5-mini:free               # 262K
+      model: openrouter/google/gemma-4-31b-it:free               # 262K
       api_key: os.environ/OPENROUTER_API_KEY
       rpm: 5
   - model_name: claude-free-sub
@@ -58,16 +62,23 @@ model_list:
       model: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free   # 256K
       api_key: os.environ/OPENROUTER_API_KEY
       rpm: 4
-  # - model_name: claude-free-sub
-  #   litellm_params:
-  #     model: gemini/<Flash-Lite 모델 ID>
-  #     api_key: os.environ/GEMINI_API_KEY
-  #     rpm: 10
-  # - model_name: claude-free-sub
-  #   litellm_params:
-  #     model: mistral/codestral-2508
-  #     api_key: os.environ/MISTRAL_API_KEY
-  #     rpm: 30
+  # Gemini 무료분과 Mistral 기본값은 입력을 학습에 쓴다. 민감한 작업이면 이 항목을 주석 처리한다.
+  - model_name: claude-free-sub
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite                     # Flash-Lite 약 500 RPD
+      api_key: os.environ/GEMINI_API_KEY
+      rpm: 5
+  - model_name: claude-free-sub
+    litellm_params:
+      model: mistral/codestral-2508                           # 256K, 1 RPS
+      api_key: os.environ/MISTRAL_API_KEY
+      rpm: 5
+  - model_name: claude-free-sub
+    litellm_params:
+      model: openai/nvidia/nemotron-3-super-120b-a12b         # Requesty, 1M
+      api_base: https://router.requesty.ai/v1
+      api_key: os.environ/REQUESTY_API_KEY
+      rpm: 3
 
   # ── fast: 백그라운드 소형 요청 ──
   - model_name: claude-free-fast
@@ -77,7 +88,7 @@ model_list:
       rpm: 4
   - model_name: claude-free-fast
     litellm_params:
-      model: openrouter/nex-agi/nex-n2.5-mini:free
+      model: openrouter/qwen/qwen3.8-27b:free
       api_key: os.environ/OPENROUTER_API_KEY
       rpm: 4
   - model_name: claude-free-fast
@@ -85,12 +96,21 @@ model_list:
       model: openrouter/poolside/laguna-xs-2.1:free
       api_key: os.environ/OPENROUTER_API_KEY
       rpm: 3
-  # - model_name: claude-free-fast
-  #   litellm_params:
-  #     model: groq/openai/gpt-oss-120b
-  #     api_key: os.environ/GROQ_API_KEY
-  #     rpm: 25
-  #     tpm: 7000
+  # Groq 는 8K TPM 이라 소형 요청 전용. max_input_tokens 를 낮춰 두면 enable_pre_call_checks 가
+  # 큰 요청에서 이 배포를 빼고 같은 그룹의 다른 모델로 보낸다.
+  - model_name: claude-free-fast
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 6
+      tpm: 7000
+    model_info:
+      max_input_tokens: 6000
+  - model_name: claude-free-fast
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      rpm: 3
 
 litellm_settings:
   drop_params: true                  # 제공처가 모르는 파라미터 제거

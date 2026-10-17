@@ -225,3 +225,42 @@ scripts/check-models.sh --candidates  # 등록되지 않은 OpenRouter 무료 �
 ## 라이선스
 
 MIT
+
+## CloudCLI 웹 UI
+
+공식 Claude Agent SDK로 기존 Claude Code 대화를 이어간다. 홈 디렉터리 기준으로 설치하므로
+이 저장소 밖의 어느 폴더에서든 사용할 수 있다. Node.js 22 이상이 필요하다.
+
+```bash
+scripts/install-cloudcli.sh    # 홈 디렉터리에 최초 설치 또는 실행기 갱신
+claude-cloud                  # 자동: 계정 1 → 크레딧 소진 시 계정 2 (3001)
+claude-cloud --account 1      # 계정 1 고정 (3001)
+claude-cloud --account 2      # 계정 2 고정 (3002)
+claude-cloud --reset-accounts # 자동 모드의 시작 계정을 1로 초기화
+```
+
+`~/.config/claude-cloud/keys.env`에 다음을 넣는다 (파일 권한 600).
+
+```dotenv
+ANTHROPIC_1_API_KEY=첫번째키
+ANTHROPIC_2_API_KEY=두번째키
+```
+
+실행기는 `~/.local/bin/claude-cloud`, 설치 패키지·로그인 DB는
+`~/.local/share/claude-cloud/`에 있다. 기본 포트는 3001이며 `http://127.0.0.1:3001`을 연다.
+처음 접속할 때 만드는 로컬 로그인은 Anthropic 로그인과 별개다. 자동 모드와 계정 1 고정은
+같은 로컬 로그인 DB를 쓰며, 계정 2 고정은 별도 DB를 쓴다. 기존 `~/.claude` 대화는 공통으로 검색한다.
+프로젝트와 대화를 선택해 웹 채팅으로 이어간다. 내장 터미널의 일반 `claude`는 크레딧용 SDK 경로가 아니다.
+
+자동 모드는 로컬 연결기가 SDK 요청을 Anthropic 공식 API로 전달하고, 잔액 부족 HTTP 오류를
+받으면 해당 요청만 다른 키로 한 번 재시도한다. 이미 실행된 도구나 시작된 응답 스트림은
+재실행하지 않는다. 두 계정 모두 소진되면 오류를 그대로 반환한다. 전환된 우선 계정을 로컬에
+기록해 다음 실행에도 사용한다. 월별 크레딧이 충전되면 `--reset-accounts`로 계정 1부터 다시 시작할 수 있다.
+API 오류 응답이 아닌 스트림 도중 발생한 오류에는 자동 전환하지 않는다. 인증 오류·일반적인 속도 제한·
+서버 장애도 키 소진으로 판단하지 않는다. 유료 잔액이 있으면 Anthropic이 계속 그 잔액을 쓸 수 있으므로
+이 기능은 월 $200 상한이나 자동 지출 차단 기능이 아니다.
+
+계정 고정 모드는 Anthropic에 직접 연결한다. 자동 모드는 임시 로컬 인증 토큰을 사용하는
+loopback 연결기를 거치며, 업스트림에는 SDK 헤더·본문을 유지하고 API 키만 바꿔 전달한다.
+서버는 모두 `127.0.0.1`에만 열린다. 같은 대화에 여러 창에서 동시에 요청하지 않는다.
+Ctrl+C로 서버를 종료한다. 전환 로직 검증: `node --test scripts/cloudcli-gateway.test.mjs`.

@@ -49,3 +49,8 @@ claude-free() {
     --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
     "$@"
 }
+
+# CloudCLI 웹 UI (공식 Agent SDK). 무료 모드와 별도 실행.
+claude-cloud() {
+  "$HOME/.local/bin/claude-cloud" "$@"
+}
